@@ -6,7 +6,8 @@ RUN pip install --no-cache-dir \
     minio==7.2.7 \
     kafka-python-ng==2.2.2 \
     faker==25.0.0 \
-    apache-airflow-providers-amazon==8.26.0
+    trino==0.329.0 \
+    pandas==2.2.2
 
 ENV DBT_LOG_PATH=/tmp/dbt_logs
 ENV DBT_TARGET_PATH=/tmp/dbt_target

@@ -44,7 +44,7 @@ def generate_and_upload_crm(**kwargs):
         client.make_bucket(BUCKET_NAME)
 
     data_bytes = json.dumps(customers, ensure_ascii=False).encode("utf-8")
-    object_name = f"raw/crm/crm_{execution_date}.json"
+    object_name = "raw/crm/customers.json"
     
     client.put_object(
         BUCKET_NAME,

@@ -20,7 +20,7 @@ services:
       - minio_data:/data
 
   trino:
-    image: trinodb/trino:latest
+    image: trinodb/trino:482
     container_name: trino
     ports:
       - "8081:8080"
@@ -29,6 +29,7 @@ services:
     depends_on:
       - postgres
       - minio
+      - nessie
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
@@ -97,6 +98,14 @@ services:
       kafka:
         condition: service_healthy
     restart: unless-stopped
+
+  nessie:
+    image: ghcr.io/projectnessie/nessie:0.104.5
+    container_name: nessie
+    ports:
+      - "19120:19120"
+    environment:
+      QUARKUS_HTTP_PORT: 19120
 
 volumes:
   postgres_data:
