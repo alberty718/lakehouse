@@ -23,7 +23,7 @@ services:
     image: trinodb/trino:latest
     container_name: trino
     ports:
-      - "8080:8080"
+      - "8081:8080"
     volumes:
       - ./trino/catalog:/etc/trino/catalog
     depends_on:
@@ -58,25 +58,48 @@ services:
       retries: 10
       start_period: 60s
 
-  pos-consumer:
-    build: ./consumer
-    container_name: pos-consumer
+  pos-producer:
+    build: ./producer
+    container_name: pos-producer
     depends_on:
       kafka:
         condition: service_healthy
-      minio:
-        condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       TOPIC_NAME: raw_pos_transactions
+      PRODUCE_INTERVAL_SEC: 2
+    restart: unless-stopped
+
+  airflow:
+    build: ./airflow
+    container_name: airflow
+    ports:
+      - "8080:8080"
+    command: standalone
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
       MINIO_ENDPOINT: minio:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      MINIO_BUCKET: raw-pos
-      CONSUMER_BATCH_SIZE: 50
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - airflow_data:/opt/airflow
+      - ./scripts:/opt/airflow/scripts
+    depends_on:
+      minio:
+        condition: service_started
+      kafka:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   postgres_data:
   minio_data:
   kafka_data:
+  airflow_data:

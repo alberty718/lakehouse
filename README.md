@@ -1,3 +1,5 @@
+пароль от airflow: docker compose logs airflow | grep password
+
 # Mini-Lakehouse: Trino + Iceberg + MinIO + PostgreSQL
 
 Локальный lakehouse-стенд в Docker. Trino выполняет SQL-запросы к таблицам
