@@ -162,11 +162,12 @@ class MinioIcebergLoader:
 
         rows = self.read_folder("raw/pos/")
 
-        cleaned = []
+        transactions = []
+        transaction_items = []
 
         for row in rows:
 
-            cleaned.append({
+            transactions.append({
                 "transaction_id": row["transaction_id"],
                 "ts": row["timestamp"],
                 "store_id": row["store_id"],
@@ -175,9 +176,17 @@ class MinioIcebergLoader:
                 "payment_method": row["payment_method"]
             })
 
+            for item in row["items"]:
+                transaction_items.append({
+                    "transaction_id": row["transaction_id"],
+                    "product_id": item["product_id"],
+                    "quantity": item["quantity"],
+                    "unit_price": item["unit_price"]
+                })
+
         self.insert(
             "iceberg.silver.pos_transactions",
-            cleaned,
+            transactions,
             [
                 "transaction_id",
                 "ts",
@@ -185,6 +194,17 @@ class MinioIcebergLoader:
                 "customer_id",
                 "total_amount",
                 "payment_method"
+            ]
+        )
+
+        self.insert(
+            "iceberg.silver.transaction_items",
+            transaction_items,
+            [
+                "transaction_id",
+                "product_id",
+                "quantity",
+                "unit_price"
             ]
         )
 

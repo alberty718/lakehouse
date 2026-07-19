@@ -71,6 +71,20 @@ def create_tables():
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS iceberg.silver.transaction_items (
+
+        transaction_id VARCHAR,
+        product_id VARCHAR,
+        quantity INTEGER,
+        unit_price DOUBLE
+
+    )
+    WITH (
+        format='PARQUET'
+    )
+    """)
+
     conn.close()
 
 
