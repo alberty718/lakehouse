@@ -48,9 +48,10 @@ def load_reference_data():
     customer_ids = [c["customer_id"] for c in customers]
     product_ids = [p["product_id"] for p in products]
 
-    logger.info(
-        f"Loaded {len(customer_ids)} customers and {len(product_ids)} products"
-    )
+    logger.info(f"Loaded {len(customer_ids)} customers")
+    logger.info(f"Loaded {len(product_ids)} products")
+    logger.info(f"First 5 customer_ids: {customer_ids[:5]}")
+    logger.info(f"First 5 product_ids: {product_ids[:5]}")
 
     return customer_ids, product_ids
 
@@ -65,21 +66,23 @@ def generate_transaction(customer_ids, product_ids):
         price = round(fake.pyfloat(min_value=100, max_value=15000), 2)
         qty = fake.pyint(min_value=1, max_value=3)
 
-        items.append(
-            {
-                "product_id": random.choice(product_ids),
-                "quantity": qty,
-                "unit_price": price,
-            }
-        )
+        items.append({
+            "product_id": random.choice(product_ids),
+            "quantity": qty,
+            "unit_price": price,
+        })
 
         total += price * qty
+
+    customer_id = random.choice(customer_ids)
+
+    logger.info(f"Generated customer_id: {customer_id}")
 
     return {
         "transaction_id": f"TXN-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{fake.pyint(min_value=1000, max_value=9999)}",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "store_id": f"STORE-{fake.city()[:3].upper()}-{fake.pyint(min_value=1, max_value=20):02d}",
-        "customer_id": random.choice(customer_ids),
+        "customer_id": customer_id,
         "items": items,
         "total_amount": round(total, 2),
         "payment_method": fake.random_element(["card", "cash", "sbp"]),
@@ -120,9 +123,6 @@ def main():
     while True:
         try:
             customer_ids, product_ids = load_reference_data()
-            logger.info(
-                f"Loaded {len(customer_ids)} customers and {len(product_ids)} products"
-            )
             break
         except Exception as e:
             logger.info(f"Waiting for reference data... ({e})")

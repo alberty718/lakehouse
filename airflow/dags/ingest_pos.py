@@ -30,7 +30,9 @@ def consume_and_upload_to_minio(**kwargs):
     start_time = datetime.now()
     
     for message in consumer:
+        print(message.value["customer_id"])
         messages_batch.append(message.value)
+
         if len(messages_batch) >= 100 or (datetime.now() - start_time).seconds > 50:
             break
             
