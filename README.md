@@ -1,56 +1,236 @@
-пароль от airflow: docker compose logs airflow | grep password
+# OrangeData
 
-# Mini-Lakehouse: Trino + Iceberg + MinIO + PostgreSQL
+OrangeData — учебный проект, реализующий MVP Lakehouse для обработки и анализа данных розничной торговли.
 
-Локальный lakehouse-стенд в Docker. Trino выполняет SQL-запросы к таблицам
-в формате Iceberg. Метаданные таблиц (схемы, снапшоты) хранятся в PostgreSQL
-через Iceberg JDBC-каталог. Сами данные (parquet-файлы) лежат в MinIO —
-S3-совместимом хранилище.
+Цель проекта — показать полный цикл обработки данных: от генерации событий до построения аналитических витрин и их визуализации.
 
-## Сервисы и порты
+В качестве источников используются синтетические данные о клиентах, товарах и POS-транзакциях. Данные публикуются в Kafka, сохраняются в объектном хранилище, проходят несколько этапов обработки и загружаются в Apache Iceberg. Финальный результат отображается в Apache Superset.
 
-- **Trino** — SQL-движок, порт 8080 (Web UI и запросы)
-- **MinIO** — S3-хранилище, порт 9000 (API) и 9001 (веб-консоль)
-- **PostgreSQL** — метастор Iceberg, порт 5432
+---
 
-## Запуск
+## Используемый стек
 
-    cp .env.example .env      # заполнить своими значениями
-    docker compose up -d
-    docker ps                 # все три сервиса должны быть healthy
+- Apache Airflow
+- Apache Kafka
+- Apache Iceberg
+- Project Nessie
+- Trino
+- Apache Superset
+- MinIO
+- PostgreSQL
+- Docker Compose
 
-## Создание бакета
+---
 
-Зайти в MinIO UI (http://localhost:9001), логин/пароль — из `.env`
-(MINIO_ROOT_USER / MINIO_ROOT_PASSWORD), создать бакет `lakehouse`.
+## Архитектура
 
-## Инициализация таблиц
+```
+CRM Generator
+      │
+Products Generator
+      │
+Kafka Producer
+      │
+      ▼
+ Apache Kafka
+      │
+      ▼
+ Airflow Consumer
+      │
+      ├────────► Raw (MinIO)
+      │
+      ▼
+ Silver (Iceberg)
+      │
+      ▼
+ Gold (Iceberg)
+      │
+      ▼
+ Apache Superset
+```
 
-    docker exec -i trino trino --catalog iceberg < sql/create_table.sql
-    docker exec -i postgres psql -U iceberg -d iceberg_catalog < sql/create_postgres_table.sql
-    docker exec -i trino trino --catalog iceberg < sql/insert.sql
+---
 
-## Проверка
+## Конвейер обработки данных
 
-    docker exec -i trino trino --catalog iceberg < sql/federated_query.sql      # JOIN (federated query)
-    docker exec -i trino trino --catalog iceberg < sql/timetravel.sql  # Time Travel
+Пайплайн состоит из следующих этапов:
 
-## Health-check
+1. Генерация клиентов.
+2. Генерация каталога товаров.
+3. Генерация POS-транзакций и публикация сообщений в Kafka.
+4. Чтение сообщений из Kafka.
+5. Сохранение исходных JSON-файлов в MinIO (Raw).
+6. Загрузка и очистка данных в Silver-слое.
+7. Построение аналитических витрин Gold.
+8. Создание Dataset'ов и Dashboard в Apache Superset.
 
-    ./healthcheck/check_postgres.sh
-    ./healthcheck/check_minio.sh
-    ./healthcheck/check_trino.sh
+Все этапы выполняются одним DAG в Apache Airflow.
 
-## Структура репозитория
+---
 
-- `docker-compose.yml` — описание сервисов
-- `.env.example` — шаблон переменных окружения
-- `trino/catalog/iceberg.properties` — конфиг Iceberg-каталога
-- `trino/catalog/postgresql.properties` — конфиг PostgreSQL-каталога
-- `sql/` — SQL-скрипты (create_table, create_postgres_table, insert, federated query, timetravel)
-- `healthcheck/` — скрипты проверки живости сервисов
+## Слои данных
 
-## Скриншоты
+### Raw
 
-![MinIO bucket](screenshots/minio.jpg)
-![Trino query](screenshots/trino.jpg)
+В слое Raw хранятся исходные JSON-сообщения, полученные из Kafka. Данные записываются в MinIO без преобразований и могут использоваться для повторной обработки.
+
+### Silver
+
+Слой содержит очищенные и нормализованные таблицы.
+
+Таблицы:
+
+- `customers`
+- `products`
+- `pos_transactions`
+- `transaction_items`
+
+### Gold
+
+В Gold находятся витрины данных, предназначенные для аналитики.
+
+Таблицы:
+
+- `fact_sales`
+- `sales_daily`
+- `product_sales`
+
+---
+
+## Dashboard
+
+После успешного выполнения пайплайна автоматически создается Dashboard в Apache Superset.
+
+Он содержит следующие визуализации:
+
+- KPI — общая выручка;
+- KPI — количество транзакций;
+- KPI — средний чек;
+- динамика выручки;
+- динамика количества транзакций;
+- топ-10 товаров по выручке.
+
+Dashboard строится на основе таблиц Gold и не требует дополнительной настройки после запуска проекта.
+
+---
+
+## Запуск проекта
+
+### 1. Создать файл `.env`
+
+Перед запуском необходимо заполнить переменные окружения.
+
+Для генерации Fernet Key выполните:
+
+```bash
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Полученное значение необходимо указать в переменной
+
+```env
+AIRFLOW__CORE__FERNET_KEY=...
+```
+
+Остальные параметры (`POSTGRES_*`, `MINIO_*`, `SUPERSET_*` и т.д.) также необходимо заполнить в соответствии с используемым окружением.
+
+---
+
+### 2. Собрать и запустить контейнеры
+
+```bash
+docker compose up -d --build
+```
+
+### 3. Открыть Airflow
+
+После запуска контейнеров веб-интерфейс Airflow будет доступен по адресу:
+
+```
+http://localhost:8080
+```
+
+Данные для входа:
+
+```
+Логин: airflow
+Пароль: airflow
+```
+
+---
+
+### 4. Запустить DAG
+
+После входа в Airflow необходимо запустить DAG:
+
+```
+retail_lakehouse_pipeline
+```
+
+DAG автоматически выполнит весь конвейер обработки данных:
+
+- сгенерирует клиентов;
+- сгенерирует товары;
+- создаст POS-транзакции;
+- опубликует сообщения в Kafka;
+- сохранит Raw-данные в MinIO;
+- загрузит данные в Silver;
+- построит витрины Gold;
+- создаст Dataset'ы и Dashboard в Apache Superset.
+
+После успешного выполнения пайплайна данные будут готовы для анализа.
+
+---
+
+## Доступные сервисы
+
+| Сервис | Адрес |
+|--------|--------|
+| Airflow | http://localhost:8080 |
+| Superset | http://localhost:8088 |
+| MinIO Console | http://localhost:9001 |
+
+---
+
+## Структура проекта
+
+```
+.
+├── airflow/
+│   ├── dags/
+│   ├── plugins/
+│   └── requirements/
+├── kafka/
+├── minio/
+├── postgres/
+├── superset/
+├── trino/
+├── docker-compose.yml
+├── .env
+└── README.md
+```
+
+---
+
+## Используемые технологии
+
+| Компонент | Назначение |
+|-----------|------------|
+| Apache Airflow | Оркестрация ETL-пайплайна |
+| Apache Kafka | Передача потоковых событий |
+| MinIO | Хранение Raw-данных |
+| Apache Iceberg | Хранение таблиц Silver и Gold |
+| Project Nessie | Каталог Iceberg |
+| Trino | SQL-движок для аналитики |
+| Apache Superset | Визуализация данных |
+| PostgreSQL | Метаданные сервисов |
+| Docker Compose | Запуск инфраструктуры |
+
+
+---
+
+## Автор
+
+TG для связи - @thealberty
+
+Проект разработан в учебных целях как демонстрация построения современного Lakehouse-пайплайна на базе открытых технологий.

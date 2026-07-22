@@ -68,7 +68,7 @@ with DAG(
     dag_id="batch_ingest_crm",
     default_args=default_args,
     description="Ежечасная загрузка CRM данных в Raw/Bronze слой (ФТ-3)",
-    schedule_interval="@hourly",
+    schedule=None,
     start_date=datetime(2026, 7, 1),
     catchup=False,
     tags=["retail", "batch", "crm", "bronze"],

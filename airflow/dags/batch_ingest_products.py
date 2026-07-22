@@ -75,7 +75,7 @@ default_args = {
 with DAG(
     dag_id="batch_ingest_products",
     default_args=default_args,
-    schedule="@daily",
+    schedule=None,
     start_date=datetime(2026, 7, 1),
     catchup=False,
 ) as dag:

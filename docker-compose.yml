@@ -19,6 +19,19 @@ services:
     volumes:
       - minio_data:/data
 
+  minio-init:
+    image: minio/mc:RELEASE.2025-05-21T01-59-54Z
+    container_name: minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    entrypoint: >
+      /bin/sh -c "until mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do sleep 2; done &&
+      mc mb --ignore-existing local/lakehouse"
+
   trino:
     image: trinodb/trino:482
     container_name: trino
@@ -27,9 +40,12 @@ services:
     volumes:
       - ./trino/catalog:/etc/trino/catalog
     depends_on:
-      - postgres
-      - minio
-      - nessie
+      postgres:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+      nessie:
+        condition: service_started
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
@@ -59,24 +75,18 @@ services:
       retries: 10
       start_period: 60s
 
-  pos-producer:
-    build: ./producer
-    container_name: pos-producer
-    depends_on:
-      kafka:
-        condition: service_healthy
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      TOPIC_NAME: raw_pos_transactions
-      PRODUCE_INTERVAL_SEC: 2
-    restart: unless-stopped
-
   airflow:
     build: ./airflow
     container_name: airflow
     ports:
       - "8080:8080"
-    command: bash -c "rm -f /opt/airflow/airflow-webserver.pid && airflow standalone"
+    command: >
+      bash -c "rm -f /opt/airflow/airflow-webserver.pid;
+      airflow standalone & airflow_pid=$$!;
+      until airflow users list >/dev/null 2>&1; do sleep 2; done;
+      airflow users create --username admin --firstname Airflow --lastname Admin --role Admin --email admin@lakehouse.local --password admin ||
+      airflow users reset-password --username admin --password admin;
+      wait $$airflow_pid"
     env_file: .env
     environment:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
@@ -85,16 +95,19 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
-      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
-      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
+      SUPERSET_URL: http://superset:8088
+      SUPERSET_ADMIN_USERNAME: ${SUPERSET_ADMIN_USERNAME:-admin}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-admin}
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+      _AIRFLOW_WWW_USER_EMAIL: admin@lakehouse.local
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - airflow_data:/opt/airflow
       - ./scripts:/opt/airflow/scripts
     depends_on:
-      minio:
-        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
       kafka:
         condition: service_healthy
     restart: unless-stopped
@@ -107,8 +120,45 @@ services:
     environment:
       QUARKUS_HTTP_PORT: 19120
 
+  superset-init:
+    build: ./superset
+    image: retail-superset:local
+    container_name: superset-init
+    user: "0"
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-retail-lakehouse-change-this-secret-key}
+      SUPERSET_ADMIN_USERNAME: ${SUPERSET_ADMIN_USERNAME:-admin}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-admin}
+      SUPERSET_ADMIN_EMAIL: ${SUPERSET_ADMIN_EMAIL:-admin@lakehouse.local}
+    volumes:
+      - superset_home:/app/superset_home
+    command: >
+      /bin/sh -c "superset db upgrade &&
+      (superset fab create-admin --username $$SUPERSET_ADMIN_USERNAME --firstname Superset --lastname Admin --email $$SUPERSET_ADMIN_EMAIL --password $$SUPERSET_ADMIN_PASSWORD || true) &&
+      superset init"
+
+  superset:
+    build: ./superset
+    image: retail-superset:local
+    container_name: superset
+    user: "0"
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-retail-lakehouse-change-this-secret-key}
+    volumes:
+      - superset_home:/app/superset_home
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      trino:
+        condition: service_started
+    command: superset run -h 0.0.0.0 -p 8088
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   minio_data:
   kafka_data:
   airflow_data:
+  superset_home:

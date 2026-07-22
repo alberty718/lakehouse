@@ -56,6 +56,16 @@ class MinioIcebergLoader:
 
         return rows
 
+    def clear_silver_tables(self):
+        """Refresh the current snapshot so reference IDs cannot become stale."""
+        for table in [
+            "iceberg.silver.transaction_items",
+            "iceberg.silver.pos_transactions",
+            "iceberg.silver.products",
+            "iceberg.silver.customers",
+        ]:
+            self.cursor.execute(f"DELETE FROM {table}")
+
     def format_value(self, value, col):
 
         if value is None:
@@ -158,9 +168,9 @@ class MinioIcebergLoader:
             ]
         )
 
-    def load_transactions(self):
+    def load_transactions(self, prefix="raw/pos/"):
 
-        rows = self.read_folder("raw/pos/")
+        rows = self.read_folder(prefix)
 
         transactions = []
         transaction_items = []
