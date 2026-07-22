@@ -142,6 +142,8 @@ AIRFLOW__CORE__FERNET_KEY=...
 docker compose up -d --build
 ```
 
+---
+
 ### 3. Открыть Airflow
 
 После запуска контейнеров веб-интерфейс Airflow будет доступен по адресу:
