@@ -104,7 +104,6 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - airflow_data:/opt/airflow
-      - ./scripts:/opt/airflow/scripts
     depends_on:
       minio-init:
         condition: service_completed_successfully

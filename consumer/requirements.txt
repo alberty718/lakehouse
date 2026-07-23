@@ -1,2 +1,0 @@
-kafka-python-ng==2.2.2
-minio==7.2.7
