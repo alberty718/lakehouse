@@ -9,6 +9,7 @@ from batch_ingest_crm import generate_and_upload_crm
 from batch_ingest_products import generate_and_upload_products
 from create_silver_tables import create_tables as create_silver_tables
 from etl.pos_producer import produce_pos_events
+from etl.revenue_forecaster import ensure_forecast_table, train_and_forecast
 from etl.superset_provisioner import provision_dashboards
 from ingest_pos import consume_and_upload_to_minio
 from load_raw_to_silver import load as load_raw_to_silver
@@ -69,7 +70,14 @@ with DAG(
     provision_superset = PythonOperator(
         task_id="provision_superset_dashboards", python_callable=provision_dashboards
     )
+    ensure_forecast_table_task = PythonOperator(
+        task_id="ensure_forecast_table", python_callable=ensure_forecast_table
+    )
+    forecast_revenue = PythonOperator(
+        task_id="train_and_forecast_revenue", python_callable=train_and_forecast
+    )
 
     ensure_silver_tables >> generate_customers >> generate_products >> produce_events
     produce_events >> consume_events >> load_silver >> ensure_gold_tables
-    ensure_gold_tables >> load_fact >> load_marts >> validate_gold >> provision_superset
+    ensure_gold_tables >> load_fact >> load_marts >> validate_gold
+    validate_gold >> ensure_forecast_table_task >> forecast_revenue >> provision_superset

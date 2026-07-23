@@ -6,4 +6,5 @@ RUN pip install --no-cache-dir \
     faker==25.0.0 \
     trino==0.329.0 \
     pandas==2.2.2 \
-    requests==2.32.3
+    requests==2.32.3 \
+    scikit-learn==1.5.2

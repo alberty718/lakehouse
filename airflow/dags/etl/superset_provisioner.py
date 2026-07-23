@@ -137,6 +137,7 @@ def provision_dashboards():
     session = _session()
     database_id = _database(session)
     daily, products = _dataset(session, database_id, "sales_daily"), _dataset(session, database_id, "product_sales")
+    forecast = _dataset(session, database_id, "revenue_forecast")
 
     overview_title = "Retail — Executive Overview"
     overview_id = _dashboard(session, overview_title, "retail-executive-overview")
@@ -177,6 +178,7 @@ def provision_dashboards():
     trend = {
         "Динамика выручки": _chart(session, "Динамика выручки", daily, "echarts_timeseries_line", {**trend_params, "metrics": [{"expressionType": "SQL", "sqlExpression": "SUM(revenue)", "label": "Выручка"}]}, trend_id),
         "Динамика транзакций": _chart(session, "Динамика транзакций", daily, "echarts_timeseries_line", {**trend_params, "metrics": [{"expressionType": "SQL", "sqlExpression": "SUM(transactions_count)", "label": "Транзакции"}]}, trend_id),
+        "Прогноз выручки": _chart(session, "Прогноз выручки", forecast, "echarts_timeseries_line", {**trend_params, "metrics": [{"expressionType": "SQL", "sqlExpression": "SUM(revenue_forecast)", "label": "Forecast"}]}, trend_id),
     }
     _layout(session, trend_id, trend_title, trend)
 

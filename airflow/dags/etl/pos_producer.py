@@ -6,7 +6,7 @@ import os
 import random
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from faker import Faker
 from kafka import KafkaProducer
@@ -20,6 +20,9 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
 MINIO_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_PASS = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 BUCKET_NAME = "lakehouse"
+
+# Сколько дней истории генерировать за один запуск DAG (для холодного старта форкаста)
+BACKFILL_DAYS = int(os.getenv("POS_BACKFILL_DAYS", "14"))
 
 
 def _load_reference_ids():
@@ -50,12 +53,12 @@ def _load_reference_ids():
     return customer_ids, product_ids
 
 
-def _make_event(customer_ids, product_ids, batch_id, fake):
+def _make_event(customer_ids, product_ids, batch_id, fake, event_ts):
     items = []
     total_amount = 0.0
     for _ in range(random.randint(1, 5)):
         quantity = random.randint(1, 3)
-        unit_price = round(random.uniform(100, 15000), 2)
+        unit_price = round(random.lognormvariate(6.5, 0.8), 2)
         items.append(
             {
                 "product_id": random.choice(product_ids),
@@ -68,7 +71,7 @@ def _make_event(customer_ids, product_ids, batch_id, fake):
     return {
         "batch_id": batch_id,
         "transaction_id": f"TXN-{uuid.uuid4()}",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": event_ts.isoformat(),
         "store_id": f"STORE-{fake.city()[:3].upper()}-{random.randint(1, 20):02d}",
         "customer_id": random.choice(customer_ids),
         "items": items,
@@ -78,8 +81,8 @@ def _make_event(customer_ids, product_ids, batch_id, fake):
 
 
 def produce_pos_events(**context):
-    """Publish a finite, traceable POS batch and return its metadata through XCom."""
-    event_count = int(os.getenv("POS_EVENTS_PER_RUN", "100"))
+    """Publish a finite, traceable POS batch spanning BACKFILL_DAYS days, returned via XCom."""
+    events_per_day = int(os.getenv("POS_EVENTS_PER_RUN", "100"))
     batch_id = context["run_id"]
     customer_ids, product_ids = _load_reference_ids()
     producer = KafkaProducer(
@@ -92,14 +95,41 @@ def produce_pos_events(**context):
     )
     try:
         fake = Faker("ru_RU")
+        now = datetime.now(timezone.utc)
         futures = []
-        for _ in range(event_count):
-            futures.append(producer.send(TOPIC_NAME, _make_event(customer_ids, product_ids, batch_id, fake)))
+        total_events = 0
+
+        # Генерируем BACKFILL_DAYS дней истории: от (BACKFILL_DAYS-1) дней назад до сегодня.
+        for day_offset in range(BACKFILL_DAYS - 1, -1, -1):
+            day_ts = now - timedelta(days=day_offset)
+            daily_events = max(40, int(random.gauss(events_per_day, events_per_day * 0.2)))
+            for _ in range(daily_events):
+                # разбрасываем время событий в течение дня, а не все в одну секунду
+                event_ts = day_ts.replace(
+                    hour = random.choices(
+                        [8,9,10,11,12,13,14,15,16,17,18,19,20,21],
+                        weights=[2,3,5,6,8,10,10,8,7,9,14,15,12,5]
+                    )[0],
+                    minute=random.randint(0, 59),
+                    second=random.randint(0, 59),
+                    microsecond=0,
+                )
+                futures.append(
+                    producer.send(
+                        TOPIC_NAME,
+                        _make_event(customer_ids, product_ids, batch_id, fake, event_ts),
+                    )
+                )
+                total_events += 1
+
         for future in futures:
             future.get(timeout=30)
         producer.flush(timeout=30)
     finally:
         producer.close()
 
-    LOGGER.info("Published %s POS events for batch %s", event_count, batch_id)
-    return {"batch_id": batch_id, "event_count": event_count}
+    LOGGER.info(
+        "Published %s POS events across %s days for batch %s",
+        total_events, BACKFILL_DAYS, batch_id,
+    )
+    return {"batch_id": batch_id, "event_count": total_events}
